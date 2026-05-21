@@ -1,0 +1,162 @@
+
+<style>
+  .seg { cursor: pointer; stroke: #fff; stroke-width: 2; transition: opacity 0.1s; }
+  .seg:hover { opacity: 0.82; }
+  .seg-label { pointer-events: none; font-size: 11px; font-weight: 500; text-anchor: middle; dominant-baseline: middle; }
+  .legend-dot { display:inline-block; width:13px; height:13px; border-radius:3px; vertical-align:middle; margin-right:5px; }
+  .status-item { font-size:13px; padding:3px 10px; border-radius:6px; margin:2px 4px 2px 0; display:inline-block; }
+</style>
+<h2 class="sr-only">Interactive 17-segment RWMA diagram. Click segments to cycle wall motion states.</h2>
+
+<div style="display:flex; flex-wrap:wrap; gap:20px; align-items:flex-start; padding:1rem 0;">
+
+  <div style="flex:0 0 auto;">
+    <svg id="rwma" width="340" height="340" viewBox="0 0 360 360"></svg>
+    <div style="display:flex; gap:10px; justify-content:center; margin-top:8px; flex-wrap:wrap;">
+      <span><span class="legend-dot" style="background:#3a9e5f;border:1px solid #2a7a47;"></span><span style="font-size:11px;color:var(--color-text-secondary);">Normal</span></span>
+      <span><span class="legend-dot" style="background:#f0c430;border:1px solid #c9a010;"></span><span style="font-size:11px;color:var(--color-text-secondary);">Hypokinetic</span></span>
+      <span><span class="legend-dot" style="background:#e02020;border:1px solid #b01010;"></span><span style="font-size:11px;color:var(--color-text-secondary);">Akinetic</span></span>
+      <span><span class="legend-dot" style="background:#7c3abf;border:1px solid #5a2490;"></span><span style="font-size:11px;color:var(--color-text-secondary);">Dyskinetic</span></span>
+    </div>
+  </div>
+
+  <div style="flex:1; min-width:180px;">
+    <p style="font-size:12px; font-weight:500; color:var(--color-text-secondary); margin:0 0 8px;">Tap segment to cycle state</p>
+    <div id="summary" style="min-height:36px;"></div>
+    <hr style="border:none;border-top:0.5px solid var(--color-border-tertiary);margin:10px 0;">
+    <div id="seg-list" style="font-size:12px; color:var(--color-text-secondary); line-height:1.8;"></div>
+  </div>
+
+</div>
+
+<script>
+const cx=180,cy=180;
+const R0=38,R1=88,R2=135,R3=178;
+
+const NAMES={
+  1:'Basal anterior',2:'Basal anteroseptal',3:'Basal inferoseptal',
+  4:'Basal inferior',5:'Basal inferolateral',6:'Basal anterolateral',
+  7:'Mid anterior',8:'Mid anteroseptal',9:'Mid inferoseptal',
+  10:'Mid inferior',11:'Mid inferolateral',12:'Mid anterolateral',
+  13:'Apical anterior',14:'Apical septal',15:'Apical inferior',
+  16:'Apical lateral',17:'Apex'
+};
+
+const TERRITORY={
+  1:'LAD',2:'LAD',3:'RCA',4:'RCA',5:'RCA or CX',6:'LAD or CX',
+  7:'LAD',8:'LAD',9:'RCA',10:'RCA',11:'RCA or CX',12:'LAD or CX',
+  13:'LAD',14:'LAD',15:'RCA or LAD',16:'LAD or CX',17:'LAD'
+};
+
+const MOTION_FILLS  =['#3a9e5f','#f0c430','#e02020','#7c3abf'];
+const MOTION_STROKES=['#2a7a47','#c9a010','#b01010','#5a2490'];
+const MOTION_LABELS =['#fff','#5a3c00','#fff','#fff'];
+const MOTION_NAMES  =['Normal','Hypokinetic','Akinetic','Dyskinetic'];
+const MOTION_BG     =['#d4f0e0','#fff7d0','#ffe0e0','#eedeff'];
+const MOTION_FG     =['#1a6636','#7a5200','#cc1111','#5a1fa0'];
+
+const states={};
+for(let i=1;i<=17;i++) states[i]=0;
+
+const svgEl=document.getElementById('rwma');
+
+function rad(d){return d*Math.PI/180;}
+function pt(r,d){const a=rad(d-90);return[cx+r*Math.cos(a),cy+r*Math.sin(a)];}
+function arcPath(r1,r2,a1,a2){
+  const p1=pt(r2,a1),p2=pt(r2,a2),p3=pt(r1,a2),p4=pt(r1,a1),lg=(a2-a1)>180?1:0;
+  return `M${p1[0]},${p1[1]} A${r2},${r2} 0 ${lg} 1 ${p2[0]},${p2[1]} L${p3[0]},${p3[1]} A${r1},${r1} 0 ${lg} 0 ${p4[0]},${p4[1]} Z`;
+}
+function midPt(r1,r2,a1,a2){return pt((r1+r2)/2,(a1+a2)/2);}
+
+function makeSeg(id,r1,r2,a1,a2){
+  const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+  const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('d',arcPath(r1,r2,a1,a2));
+  path.setAttribute('class','seg');
+  path.setAttribute('fill',MOTION_FILLS[0]);
+  path.setAttribute('stroke',MOTION_STROKES[0]);
+  const [lx,ly]=midPt(r1,r2,a1,a2);
+  const text=document.createElementNS('http://www.w3.org/2000/svg','text');
+  text.setAttribute('x',lx);text.setAttribute('y',ly);
+  text.setAttribute('class','seg-label');text.setAttribute('fill',MOTION_LABELS[0]);
+  text.textContent=id;
+  g.appendChild(path);g.appendChild(text);
+  g.addEventListener('click',()=>{
+    states[id]=(states[id]+1)%4;
+    const s=states[id];
+    path.setAttribute('fill',MOTION_FILLS[s]);
+    path.setAttribute('stroke',MOTION_STROKES[s]);
+    text.setAttribute('fill',MOTION_LABELS[s]);
+    updateSummary();
+  });
+  svgEl.appendChild(g);
+}
+
+const ang6=[-30,30,90,150,210,270,330];
+for(let i=0;i<6;i++) makeSeg(i+1,R2,R3,ang6[i],ang6[i+1]);
+for(let i=0;i<6;i++) makeSeg(i+7,R1,R2,ang6[i],ang6[i+1]);
+const ang4=[-45,45,135,225,315];
+for(let i=0;i<4;i++) makeSeg(i+13,R0,R1,ang4[i],ang4[i+1]);
+
+const circ=document.createElementNS('http://www.w3.org/2000/svg','circle');
+circ.setAttribute('cx',cx);circ.setAttribute('cy',cy);circ.setAttribute('r',R0);
+circ.setAttribute('class','seg');circ.setAttribute('fill',MOTION_FILLS[0]);circ.setAttribute('stroke',MOTION_STROKES[0]);
+const atxt=document.createElementNS('http://www.w3.org/2000/svg','text');
+atxt.setAttribute('x',cx);atxt.setAttribute('y',cy);
+atxt.setAttribute('class','seg-label');atxt.setAttribute('fill',MOTION_LABELS[0]);atxt.textContent='17';
+circ.addEventListener('click',()=>{
+  states[17]=(states[17]+1)%4;
+  const s=states[17];
+  circ.setAttribute('fill',MOTION_FILLS[s]);circ.setAttribute('stroke',MOTION_STROKES[s]);
+  atxt.setAttribute('fill',MOTION_LABELS[s]);
+  updateSummary();
+});
+svgEl.appendChild(circ);svgEl.appendChild(atxt);
+
+function inferArteries(){
+  const arteries=new Set();
+  for(let i=1;i<=17;i++){
+    if(states[i]>0){
+      TERRITORY[i].split(' or ').forEach(a=>arteries.add(a.trim()));
+    }
+  }
+  return [...arteries].sort((a,b)=>{
+    const order=['LAD','RCA','CX'];
+    return order.indexOf(a)-order.indexOf(b);
+  });
+}
+
+function updateSummary(){
+  const groups=[[],[],[],[]];
+  for(let i=1;i<=17;i++) groups[states[i]].push(i);
+  const sum=document.getElementById('summary');
+  const anyAbnormal=groups[1].length||groups[2].length||groups[3].length;
+
+  if(!anyAbnormal){
+    sum.innerHTML='<span style="font-size:13px;color:var(--color-text-secondary);">All segments normal</span>';
+    return;
+  }
+
+  let html='';
+  [1,2,3].forEach(s=>{
+    if(!groups[s].length) return;
+    html+=`<div style="margin-bottom:6px;">
+      <span style="font-size:12px;font-weight:500;color:${MOTION_FG[s]};">${MOTION_NAMES[s]}</span><br>
+      ${groups[s].map(n=>`<span class="status-item" style="background:${MOTION_BG[s]};color:${MOTION_FG[s]};">${n} – ${NAMES[n]}</span>`).join('')}
+    </div>`;
+  });
+
+  const arts=inferArteries();
+  html+=`<div style="margin-top:8px; padding-top:8px; border-top:0.5px solid var(--color-border-tertiary);">
+    <span style="font-size:12px; color:var(--color-text-secondary);">Likely vessel(s): </span>
+    <span style="font-size:13px; font-weight:500; color:var(--color-text-primary);">${arts.join(' or ')}</span>
+  </div>`;
+
+  sum.innerHTML=html;
+}
+
+document.getElementById('seg-list').innerHTML=
+  Object.entries(NAMES).map(([id,name])=>`<div>${id}. ${name}</div>`).join('');
+
+updateSummary();
+</script>
